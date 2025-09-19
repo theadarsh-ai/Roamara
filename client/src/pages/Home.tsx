@@ -250,6 +250,7 @@ export default function Home() {
           }}
           onConfirmBooking={handleConfirmBooking}
           isProcessing={isBooking}
+          tripId={currentTripId || undefined}
         />
       )}
     </div>

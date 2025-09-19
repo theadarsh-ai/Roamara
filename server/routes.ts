@@ -4,6 +4,11 @@ import { storage } from "./storage";
 import { generateItinerary, isAIAvailable } from "./services/itinerary-ai";
 import { insertTripSchema, type TripPreferences } from "@shared/schema";
 import { z } from "zod";
+import Stripe from 'stripe';
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
+  apiVersion: '2024-11-20.acacia',
+});
 
 // Validation schemas
 const tripPreferencesSchema = z.object({
@@ -153,6 +158,78 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching trips:", error);
       res.status(500).json({ error: "Failed to fetch trips" });
+    }
+  });
+
+  // Create Stripe payment intent
+  app.post("/api/payments/create-intent", async (req, res) => {
+    try {
+      const { amount, currency, tripId, customerInfo } = req.body;
+      
+      // Validate amount (minimum 50 paisa for Stripe in INR)
+      if (!amount || amount < 50) {
+        return res.status(400).json({
+          error: "Invalid amount",
+          message: "Amount must be at least ₹0.50"
+        });
+      }
+
+      // Create payment intent
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: Math.round(amount), // Amount in paisa
+        currency: currency || 'inr',
+        metadata: {
+          tripId: tripId || '',
+          customerName: `${customerInfo.firstName} ${customerInfo.lastName}`,
+          customerEmail: customerInfo.email,
+        },
+      });
+
+      res.json({
+        client_secret: paymentIntent.client_secret,
+        payment_intent_id: paymentIntent.id,
+      });
+    } catch (error) {
+      console.error("Error creating payment intent:", error);
+      res.status(500).json({
+        error: "Payment setup failed",
+        message: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
+  // Handle successful payment completion
+  app.post("/api/payments/confirm", async (req, res) => {
+    try {
+      const { payment_intent_id, tripId } = req.body;
+      
+      // Verify payment with Stripe
+      const paymentIntent = await stripe.paymentIntents.retrieve(payment_intent_id);
+      
+      if (paymentIntent.status !== 'succeeded') {
+        return res.status(400).json({
+          error: "Payment not completed",
+          message: "Payment has not been successfully processed"
+        });
+      }
+
+      // Update trip booking status if tripId is provided
+      if (tripId) {
+        await storage.markTripAsBooked(tripId);
+        console.log(`Trip ${tripId} successfully booked with payment ${payment_intent_id}`);
+      }
+
+      res.json({
+        success: true,
+        payment_status: paymentIntent.status,
+        amount_received: paymentIntent.amount_received,
+      });
+    } catch (error) {
+      console.error("Error confirming payment:", error);
+      res.status(500).json({
+        error: "Payment confirmation failed",
+        message: error instanceof Error ? error.message : "Unknown error"
+      });
     }
   });
 

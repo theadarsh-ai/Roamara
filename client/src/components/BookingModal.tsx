@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
+import { useToast } from "@/hooks/use-toast";
 import { 
   CreditCard, 
   User, 
@@ -15,6 +16,15 @@ import {
   CheckCircle,
   AlertCircle
 } from "lucide-react";
+import { loadStripe } from "@stripe/stripe-js";
+import {
+  Elements,
+  CardElement,
+  useStripe,
+  useElements
+} from "@stripe/react-stripe-js";
+
+const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLIC_KEY || '');
 
 interface BookingDetails {
   destination: string;
@@ -34,15 +44,19 @@ interface Props {
   bookingDetails: BookingDetails;
   onConfirmBooking: (paymentInfo: any) => void;
   isProcessing?: boolean;
+  tripId?: string;
 }
 
-export function BookingModal({ 
-  open, 
-  onClose, 
+function BookingForm({ 
   bookingDetails, 
   onConfirmBooking, 
-  isProcessing = false 
-}: Props) {
+  isProcessing = false,
+  tripId,
+  onClose
+}: Omit<Props, 'open'>) {
+  const stripe = useStripe();
+  const elements = useElements();
+  const { toast } = useToast();
   const [step, setStep] = useState<'details' | 'payment' | 'confirmation'>('details');
   const [formData, setFormData] = useState({
     firstName: '',
@@ -50,9 +64,6 @@ export function BookingModal({
     email: '',
     phone: '',
     address: '',
-    cardNumber: '',
-    expiryDate: '',
-    cvv: '',
   });
 
   const handleInputChange = (field: string, value: string) => {
@@ -64,10 +75,80 @@ export function BookingModal({
     setStep('payment');
   };
 
-  const handleConfirmPayment = () => {
-    console.log('Processing payment:', { ...formData, amount: bookingDetails.totalAmount });
-    onConfirmBooking(formData);
-    setStep('confirmation');
+  const handleConfirmPayment = async () => {
+    if (!stripe || !elements) {
+      toast({
+        title: "Payment Error",
+        description: "Payment system not ready. Please try again.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const cardElement = elements.getElement(CardElement);
+    if (!cardElement) {
+      toast({
+        title: "Payment Error",
+        description: "Card information is missing.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      // Create payment intent
+      const response = await fetch('/api/payments/create-intent', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          amount: Math.round(bookingDetails.totalAmount * 100), // Convert to paisa
+          currency: 'inr',
+          tripId,
+          customerInfo: formData,
+        }),
+      });
+
+      const { client_secret } = await response.json();
+
+      // Confirm payment
+      const { error } = await stripe.confirmCardPayment(client_secret, {
+        payment_method: {
+          card: cardElement,
+          billing_details: {
+            name: `${formData.firstName} ${formData.lastName}`,
+            email: formData.email,
+            phone: formData.phone,
+            address: {
+              line1: formData.address,
+            },
+          },
+        },
+      });
+
+      if (error) {
+        toast({
+          title: "Payment Failed",
+          description: error.message || "Payment could not be processed.",
+          variant: "destructive",
+        });
+      } else {
+        onConfirmBooking({ ...formData, paymentConfirmed: true });
+        setStep('confirmation');
+        toast({
+          title: "Payment Successful",
+          description: "Your booking has been confirmed!",
+        });
+      }
+    } catch (error) {
+      console.error('Payment error:', error);
+      toast({
+        title: "Payment Error",
+        description: "Unable to process payment. Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   const renderDetailsStep = () => (
@@ -149,37 +230,23 @@ export function BookingModal({
         <h3 className="text-lg font-semibold mb-4">Payment Details</h3>
         <div className="space-y-4">
           <div>
-            <Label htmlFor="cardNumber">Card Number</Label>
-            <Input
-              id="cardNumber"
-              placeholder="1234 5678 9012 3456"
-              value={formData.cardNumber}
-              onChange={(e) => handleInputChange('cardNumber', e.target.value)}
-              data-testid="input-card-number"
-              required
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="expiryDate">Expiry Date</Label>
-              <Input
-                id="expiryDate"
-                placeholder="MM/YY"
-                value={formData.expiryDate}
-                onChange={(e) => handleInputChange('expiryDate', e.target.value)}
-                data-testid="input-expiry-date"
-                required
-              />
-            </div>
-            <div>
-              <Label htmlFor="cvv">CVV</Label>
-              <Input
-                id="cvv"
-                placeholder="123"
-                value={formData.cvv}
-                onChange={(e) => handleInputChange('cvv', e.target.value)}
-                data-testid="input-cvv"
-                required
+            <Label>Card Information</Label>
+            <div className="border rounded-md p-3">
+              <CardElement
+                options={{
+                  style: {
+                    base: {
+                      fontSize: '16px',
+                      color: '#424770',
+                      '::placeholder': {
+                        color: '#aab7c4',
+                      },
+                    },
+                    invalid: {
+                      color: '#9e2146',
+                    },
+                  },
+                }}
               />
             </div>
           </div>
@@ -197,8 +264,8 @@ export function BookingModal({
         </Button>
         <Button 
           onClick={handleConfirmPayment}
-          disabled={isProcessing}
-          className="flex-1 bg-coral-500 hover:bg-coral-600"
+          disabled={isProcessing || !stripe}
+          className="flex-1"
           data-testid="button-confirm-payment"
         >
           {isProcessing ? "Processing..." : `Pay ₹${bookingDetails.totalAmount.toLocaleString()}`}
@@ -229,6 +296,80 @@ export function BookingModal({
   );
 
   return (
+    <div className="grid md:grid-cols-2 gap-6">
+      {/* Trip Summary */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Trip Summary</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center gap-2">
+            <MapPin className="h-4 w-4 text-muted-foreground" />
+            <span className="font-medium">{bookingDetails.destination}</span>
+          </div>
+          <div className="text-sm text-muted-foreground">
+            {bookingDetails.duration}
+          </div>
+          
+          <Separator />
+          
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <span>Accommodation</span>
+              <span>₹{bookingDetails.breakdown.accommodation.toLocaleString()}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span>Transport</span>
+              <span>₹{bookingDetails.breakdown.transport.toLocaleString()}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span>Activities</span>
+              <span>₹{bookingDetails.breakdown.activities.toLocaleString()}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span>Meals</span>
+              <span>₹{bookingDetails.breakdown.meals.toLocaleString()}</span>
+            </div>
+            
+            <Separator />
+            
+            <div className="flex justify-between font-semibold">
+              <span>Total</span>
+              <span>₹{bookingDetails.totalAmount.toLocaleString()}</span>
+            </div>
+          </div>
+
+          <div className="bg-blue-50 p-3 rounded-lg">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="h-4 w-4 text-blue-600 mt-0.5" />
+              <div className="text-sm text-blue-800">
+                <p className="font-medium">Free Cancellation</p>
+                <p>Cancel up to 24 hours before your trip starts</p>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Booking Form */}
+      <div>
+        {step === 'details' && renderDetailsStep()}
+        {step === 'payment' && renderPaymentStep()}
+        {step === 'confirmation' && renderConfirmationStep()}
+      </div>
+    </div>
+  );
+}
+
+export function BookingModal({ 
+  open, 
+  onClose, 
+  bookingDetails, 
+  onConfirmBooking, 
+  isProcessing = false,
+  tripId 
+}: Props) {
+  return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
@@ -238,68 +379,15 @@ export function BookingModal({
           </DialogTitle>
         </DialogHeader>
 
-        <div className="grid md:grid-cols-2 gap-6">
-          {/* Trip Summary */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Trip Summary</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center gap-2">
-                <MapPin className="h-4 w-4 text-muted-foreground" />
-                <span className="font-medium">{bookingDetails.destination}</span>
-              </div>
-              <div className="text-sm text-muted-foreground">
-                {bookingDetails.duration}
-              </div>
-              
-              <Separator />
-              
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span>Accommodation</span>
-                  <span>₹{bookingDetails.breakdown.accommodation.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span>Transport</span>
-                  <span>₹{bookingDetails.breakdown.transport.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span>Activities</span>
-                  <span>₹{bookingDetails.breakdown.activities.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span>Meals</span>
-                  <span>₹{bookingDetails.breakdown.meals.toLocaleString()}</span>
-                </div>
-                
-                <Separator />
-                
-                <div className="flex justify-between font-semibold">
-                  <span>Total</span>
-                  <span>₹{bookingDetails.totalAmount.toLocaleString()}</span>
-                </div>
-              </div>
-
-              <div className="bg-blue-50 p-3 rounded-lg">
-                <div className="flex items-start gap-2">
-                  <AlertCircle className="h-4 w-4 text-blue-600 mt-0.5" />
-                  <div className="text-sm text-blue-800">
-                    <p className="font-medium">Free Cancellation</p>
-                    <p>Cancel up to 24 hours before your trip starts</p>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Booking Form */}
-          <div>
-            {step === 'details' && renderDetailsStep()}
-            {step === 'payment' && renderPaymentStep()}
-            {step === 'confirmation' && renderConfirmationStep()}
-          </div>
-        </div>
+        <Elements stripe={stripePromise}>
+          <BookingForm 
+            bookingDetails={bookingDetails}
+            onConfirmBooking={onConfirmBooking}
+            isProcessing={isProcessing}
+            tripId={tripId}
+            onClose={onClose}
+          />
+        </Elements>
       </DialogContent>
     </Dialog>
   );
