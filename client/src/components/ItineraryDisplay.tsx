@@ -171,9 +171,11 @@ export function ItineraryDisplay({ itinerary, onBook, onDownload, isBooking = fa
                             <p className="text-muted-foreground text-sm mb-2">
                               {activity.description}
                             </p>
-                            <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                              <MapPin className="h-3 w-3" />
-                              {activity.location}
+                            <div className="flex items-center gap-2 p-2 bg-blue-50 rounded-md border border-blue-200">
+                              <MapPin className="h-4 w-4 text-blue-600 flex-shrink-0" />
+                              <span className="text-blue-800 font-medium text-sm">
+                                📍 {activity.location}
+                              </span>
                             </div>
                           </div>
                           <div className="text-right">
