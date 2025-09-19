@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { ArrowRight, Sparkles } from "lucide-react";
-import heroImage from "@assets/generated_images/India_travel_destinations_hero_f903321f.png";
+import heroImage from "@assets/image_1758313894581.png";
 
 interface Props {
   onGetStarted: () => void;
