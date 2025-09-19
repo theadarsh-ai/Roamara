@@ -8,159 +8,8 @@ import { LoadingSpinner } from "@/components/LoadingSpinner";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
+import type { GeneratedItinerary } from "@shared/schema";
 
-// Mock itinerary data for demonstration //todo: remove mock functionality
-const mockItinerary = {
-  destination: "Rajasthan Cultural Journey",
-  duration: "7 Days, 6 Nights",
-  totalBudget: 45000,
-  days: [
-    {
-      day: 1,
-      date: "March 15, 2024",
-      totalCost: 8500,
-      activities: [
-        {
-          id: "1",
-          time: "06:00",
-          title: "Flight to Jaipur",
-          description: "Departure from Delhi, arrival in Jaipur with airport transfers included",
-          location: "Jaipur Airport",
-          cost: 3500,
-          type: "transport" as const
-        },
-        {
-          id: "2",
-          time: "10:00",
-          title: "Check-in at Heritage Hotel",
-          description: "Traditional Rajasthani architecture with modern amenities and welcome drinks",
-          location: "Pink City, Jaipur",
-          cost: 4000,
-          type: "accommodation" as const
-        },
-        {
-          id: "3",
-          time: "14:00",
-          title: "Hawa Mahal & City Palace",
-          description: "Explore the iconic Palace of Winds and royal residence with guided tour",
-          location: "Hawa Mahal Rd, Pink City",
-          cost: 700,
-          type: "activity" as const
-        },
-        {
-          id: "4",
-          time: "19:00",
-          title: "Rajasthani Cultural Dinner",
-          description: "Authentic dal baati churma with live folk dance performance",
-          location: "Chokhi Dhani Village Resort",
-          cost: 300,
-          type: "meal" as const
-        }
-      ]
-    },
-    {
-      day: 2,
-      date: "March 16, 2024", 
-      totalCost: 7200,
-      activities: [
-        {
-          id: "5",
-          time: "08:00",
-          title: "Amber Fort Adventure",
-          description: "Majestic fort exploration with elephant ride and mirror palace visit",
-          location: "Devisinghpura, Amer",
-          cost: 1200,
-          type: "activity" as const
-        },
-        {
-          id: "6",
-          time: "13:00",
-          title: "Local Street Food Tour",
-          description: "Guided food walk through traditional markets and local eateries",
-          location: "Johari Bazaar, Old City",
-          cost: 400,
-          type: "meal" as const
-        },
-        {
-          id: "7",
-          time: "15:30",
-          title: "Jantar Mantar Observatory",
-          description: "UNESCO World Heritage astronomical instruments and science history",
-          location: "Gangori Bazaar, J.D.A. Market",
-          cost: 600,
-          type: "activity" as const
-        },
-        {
-          id: "8",
-          time: "20:00",
-          title: "Heritage Hotel Stay",
-          description: "Second night with rooftop dining overlooking the Pink City",
-          location: "Pink City, Jaipur",
-          cost: 4500,
-          type: "accommodation" as const
-        },
-        {
-          id: "9",
-          time: "21:00",
-          title: "Sunset Rooftop Dinner",
-          description: "Multi-cuisine dining with panoramic city views and live music",
-          location: "Hotel Rooftop Restaurant",
-          cost: 500,
-          type: "meal" as const
-        }
-      ]
-    },
-    {
-      day: 3,
-      date: "March 17, 2024",
-      totalCost: 9500,
-      activities: [
-        {
-          id: "10",
-          time: "07:00",
-          title: "Travel to Udaipur",
-          description: "Scenic drive through Aravalli hills with lunch stop at local dhaba",
-          location: "Jaipur to Udaipur",
-          cost: 2500,
-          type: "transport" as const
-        },
-        {
-          id: "11",
-          time: "14:00",
-          title: "Lake Palace & City Palace",
-          description: "Boat ride to the famous Lake Palace and exploring the royal complex",
-          location: "Lake Pichola, Udaipur",
-          cost: 1000,
-          type: "activity" as const
-        },
-        {
-          id: "12",
-          time: "17:00",
-          title: "Lakeside Hotel Check-in",
-          description: "Luxury accommodation with lake views and traditional Rajasthani decor",
-          location: "Lake Pichola, Udaipur",
-          cost: 5500,
-          type: "accommodation" as const
-        },
-        {
-          id: "13",
-          time: "20:00",
-          title: "Lakeside Candlelight Dinner",
-          description: "Romantic dining experience with lake views and traditional music",
-          location: "Hotel Lakeside Restaurant",
-          cost: 500,
-          type: "meal" as const
-        }
-      ]
-    }
-  ],
-  summary: {
-    accommodation: 24000,
-    transport: 8500,
-    activities: 9000,
-    meals: 3500
-  }
-};
 
 type Step = 'hero' | 'form' | 'loading' | 'itinerary';
 
@@ -169,6 +18,8 @@ export default function Home() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isBookingOpen, setIsBookingOpen] = useState(false);
   const [isBooking, setIsBooking] = useState(false);
+  const [currentTripId, setCurrentTripId] = useState<string | null>(null);
+  const [generatedItinerary, setGeneratedItinerary] = useState<GeneratedItinerary | null>(null);
 
   const handleGetStarted = () => {
     console.log('Get started clicked - moving to form');
@@ -180,11 +31,42 @@ export default function Home() {
     setIsGenerating(true);
     setCurrentStep('loading');
     
-    // Simulate AI generation process //todo: remove mock functionality
-    setTimeout(() => {
-      setIsGenerating(false);
+    try {
+      const response = await fetch('/api/trips/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          destination: preferences.destination,
+          budget: preferences.budget[0],
+          duration: preferences.duration[0],
+          groupSize: preferences.groupSize[0],
+          interests: preferences.interests,
+          startDate: preferences.startDate,
+          endDate: preferences.endDate
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      console.log('Generated itinerary:', data);
+      
+      setCurrentTripId(data.tripId);
+      setGeneratedItinerary(data.itinerary);
       setCurrentStep('itinerary');
-    }, 3000);
+      
+    } catch (error) {
+      console.error('Error generating itinerary:', error);
+      // Show error to user
+      alert('Failed to generate itinerary. Please try again.');
+      setCurrentStep('form');
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const handleBackToForm = () => {
@@ -208,15 +90,41 @@ export default function Home() {
     alert('PDF download feature would be implemented here');
   };
 
-  const handleConfirmBooking = (paymentInfo: any) => {
+  const handleConfirmBooking = async (paymentInfo: any) => {
     console.log('Booking confirmed:', paymentInfo);
     setIsBooking(true);
     
-    // Simulate payment processing //todo: remove mock functionality
-    setTimeout(() => {
+    try {
+      if (!currentTripId) {
+        throw new Error('No trip selected for booking');
+      }
+      
+      const response = await fetch(`/api/trips/${currentTripId}/book`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ paymentInfo })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      console.log('Booking successful:', data);
+      
+      // The BookingModal will handle the success state
+      setTimeout(() => {
+        setIsBooking(false);
+        // Don't close modal immediately - let user see confirmation
+      }, 2000);
+      
+    } catch (error) {
+      console.error('Error booking trip:', error);
       setIsBooking(false);
-      setIsBookingOpen(false);
-    }, 2000);
+      alert('Failed to book trip. Please try again.');
+    }
   };
 
   const renderContent = () => {
@@ -291,12 +199,14 @@ export default function Home() {
                 </p>
               </div>
               
-              <ItineraryDisplay
-                itinerary={mockItinerary}
-                onBook={handleBookTrip}
-                onDownload={handleDownloadPDF}
-                isBooking={isBooking}
-              />
+              {generatedItinerary && (
+                <ItineraryDisplay
+                  itinerary={generatedItinerary}
+                  onBook={handleBookTrip}
+                  onDownload={handleDownloadPDF}
+                  isBooking={isBooking}
+                />
+              )}
             </div>
           </div>
         );
@@ -328,18 +238,20 @@ export default function Home() {
       </main>
 
       {/* Booking Modal */}
-      <BookingModal
-        open={isBookingOpen}
-        onClose={() => setIsBookingOpen(false)}
-        bookingDetails={{
-          destination: mockItinerary.destination,
-          duration: mockItinerary.duration,
-          totalAmount: mockItinerary.totalBudget,
-          breakdown: mockItinerary.summary
-        }}
-        onConfirmBooking={handleConfirmBooking}
-        isProcessing={isBooking}
-      />
+      {generatedItinerary && (
+        <BookingModal
+          open={isBookingOpen}
+          onClose={() => setIsBookingOpen(false)}
+          bookingDetails={{
+            destination: generatedItinerary.destination,
+            duration: generatedItinerary.duration,
+            totalAmount: generatedItinerary.totalBudget,
+            breakdown: generatedItinerary.summary
+          }}
+          onConfirmBooking={handleConfirmBooking}
+          isProcessing={isBooking}
+        />
+      )}
     </div>
   );
 }
