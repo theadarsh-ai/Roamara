@@ -17,7 +17,7 @@ export function HeroSection({ onGetStarted }: Props) {
       <div className="max-w-4xl mx-auto px-4 text-white">
         <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-sm px-3 py-1 rounded-full text-sm mb-6">
           <Sparkles className="h-4 w-4" />
-          Powered by AI
+          Powered by Roamara
         </div>
         
         <h1 className="text-4xl md:text-6xl font-bold mb-6 leading-tight">

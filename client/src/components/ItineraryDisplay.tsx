@@ -171,12 +171,19 @@ export function ItineraryDisplay({ itinerary, onBook, onDownload, isBooking = fa
                             <p className="text-muted-foreground text-sm mb-2">
                               {activity.description}
                             </p>
-                            <div className="flex items-center gap-2 p-2 bg-blue-50 rounded-md border border-blue-200">
+                            <button 
+                              onClick={() => {
+                                const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(activity.location)}`;
+                                window.open(mapsUrl, '_blank');
+                              }}
+                              className="flex items-center gap-2 p-2 bg-blue-50 rounded-md border border-blue-200 hover:bg-blue-100 hover:border-blue-300 transition-colors cursor-pointer w-full text-left"
+                              data-testid={`button-location-${activity.id}`}
+                            >
                               <MapPin className="h-4 w-4 text-blue-600 flex-shrink-0" />
                               <span className="text-blue-800 font-medium text-sm">
                                 📍 {activity.location}
                               </span>
-                            </div>
+                            </button>
                           </div>
                           <div className="text-right">
                             <div className="font-semibold text-foreground">
